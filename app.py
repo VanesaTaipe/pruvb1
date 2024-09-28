@@ -4,20 +4,31 @@ import json
 from datetime import datetime
 import os
 import re
-from groq import Groq
 
 # Configuración de la página
 st.set_page_config(page_title="Chatbot de Restaurante", page_icon="🍽️", layout="wide")
 
-# Configuración de gropcloud
-GROP_API_KEY = os.getenv("GROP_API_KEY")
+# Intento de importar groq
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except ImportError:
+    GROQ_AVAILABLE = False
+    st.error("No se pudo importar la biblioteca 'groq'. Por favor, asegúrese de que está instalada correctamente.")
+    st.info("Puede instalar groq ejecutando: pip install groq==0.11.0")
 
-if not GROP_API_KEY:
-    st.error("Error: No se ha configurado la clave de API de gropcloud. Por favor, configure la variable de entorno GROP_API_KEY.")
+# Configuración de groq usando Streamlit secrets
+GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+
+if not GROQ_API_KEY:
+    st.error("Error: No se ha configurado la clave de API de Groq. Por favor, configure la variable GROQ_API_KEY en los secrets de Streamlit.")
     st.stop()
 
-# Inicializar el cliente de gropcloud
-grop_client = gropcloud.Client(api_key=GROP_API_KEY)
+# Inicializar el cliente de Groq si está disponible
+if GROQ_AVAILABLE:
+    client = Groq(api_key=GROQ_API_KEY)
+else:
+    client = None
 
 # Inicialización de variables de estado
 if 'messages' not in st.session_state:
@@ -144,18 +155,31 @@ def finalize_order():
     return f"{order_summary}\n¡Genial! Tu pedido ha sido registrado con éxito a las {timestamp}. ¡Gracias por tu compra! ¿Hay algo más en lo que pueda ayudarte?"
 
 def get_bot_response(query):
-    """Procesa la consulta del usuario y devuelve una respuesta usando gropcloud."""
+    """Procesa la consulta del usuario y devuelve una respuesta usando groq si está disponible."""
+    if not GROQ_AVAILABLE:
+        return "Lo siento, el servicio de chat no está disponible en este momento. Por favor, contacta al soporte técnico."
+
     try:
-        response = grop_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+        chat_completion = client.chat.completions.create(
             messages=[
-                {"role": "system", "content": "Eres un chatbot amigable de un restaurante."},
-                {"role": "user", "content": query}
-            ]
+                {
+                    "role": "system",
+                    "content": "Eres un chatbot amigable de un restaurante."
+                },
+                {
+                    "role": "user",
+                    "content": query
+                }
+            ],
+            model="mixtral-8x7b-32768",
+            max_tokens=1024,
+            temperature=0.5,
+            top_p=1,
+            stream=False,
         )
-        return response.choices[0].message.content
+        return chat_completion.choices[0].message.content
     except Exception as e:
-        st.error(f"Error al obtener respuesta de gropcloud: {e}")
+        st.error(f"Error al obtener respuesta de Groq: {e}")
         return "Lo siento, estoy teniendo problemas para procesar tu solicitud. ¿Puedes intentarlo de nuevo?"
 
 def main():
