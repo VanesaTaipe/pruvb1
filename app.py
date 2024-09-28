@@ -5,12 +5,16 @@ from datetime import datetime
 import os
 import re
 from groq import Groq
-
+try:
+    from groq import Groq
+except ImportError as e:
+    st.error(f"Error al importar Groq: {e}")
+    st.error("Asegúrate de que Groq esté instalado correctamente.")
 # Configuración de la página
 st.set_page_config(page_title="Chatbot de Restaurante", page_icon="🍽️", layout="wide")
 
 # Inicialización del cliente Groq
-from groq import Groq
+
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
 # Inicialización de variables de estado
