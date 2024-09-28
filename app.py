@@ -10,6 +10,7 @@ from groq import Groq
 st.set_page_config(page_title="Chatbot de Restaurante", page_icon="🍽️", layout="wide")
 
 # Inicialización del cliente Groq
+from groq import Groq
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
 # Inicialización de variables de estado
