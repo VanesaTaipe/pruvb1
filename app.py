@@ -5,8 +5,9 @@ import re
 
 # Configuración de la página
 st.set_page_config(page_title="Chatbot de Restaurante", page_icon="🍽️")
+from groq import Groq
 if groq_available:
-    from groq import Groq
+    
     try:
         client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     except Exception as e:
