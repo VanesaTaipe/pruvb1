@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 import os
 import re
-import gropcloud  # Asumiendo que existe una biblioteca gropcloud
+from groq import Groq
 
 # Configuración de la página
 st.set_page_config(page_title="Chatbot de Restaurante", page_icon="🍽️", layout="wide")
