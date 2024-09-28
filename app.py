@@ -4,9 +4,20 @@ import json
 from datetime import datetime
 import os
 import re
+import gropcloud  # Asumiendo que existe una biblioteca gropcloud
 
 # Configuración de la página
 st.set_page_config(page_title="Chatbot de Restaurante", page_icon="🍽️", layout="wide")
+
+# Configuración de gropcloud
+GROP_API_KEY = os.getenv("GROP_API_KEY")
+
+if not GROP_API_KEY:
+    st.error("Error: No se ha configurado la clave de API de gropcloud. Por favor, configure la variable de entorno GROP_API_KEY.")
+    st.stop()
+
+# Inicializar el cliente de gropcloud
+grop_client = gropcloud.Client(api_key=GROP_API_KEY)
 
 # Inicialización de variables de estado
 if 'messages' not in st.session_state:
@@ -133,37 +144,19 @@ def finalize_order():
     return f"{order_summary}\n¡Genial! Tu pedido ha sido registrado con éxito a las {timestamp}. ¡Gracias por tu compra! ¿Hay algo más en lo que pueda ayudarte?"
 
 def get_bot_response(query):
-    """Procesa la consulta del usuario y devuelve una respuesta."""
-    query_lower = query.lower()
-    
-    if "menú" in query_lower or "carta" in query_lower:
-        return get_menu()
-    elif any(category.lower() in query_lower for category in st.session_state.menu.keys()):
-        for category in st.session_state.menu.keys():
-            if category.lower() in query_lower:
-                return get_menu(category)
-    elif "entrega" in query_lower or "reparto" in query_lower:
-        for city in st.session_state.delivery_cities:
-            if city.split(',')[0].lower() in query_lower:
-                return get_delivery_info(city.split(',')[0])
-        return get_delivery_info()
-    elif "pedir" in query_lower or "ordenar" in query_lower:
-        items = re.findall(r'(\d+)\s*x\s*(.+?)(?=\d+\s*x|\s*y\s*|\s*,|$)', query_lower)
-        if items:
-            responses = []
-            for quantity, item in items:
-                responses.append(add_to_order(item.strip(), int(quantity)))
-            return "\n".join(responses)
-        else:
-            return "Entiendo que quieres hacer un pedido. ¿Podrías especificar qué te gustaría ordenar? Por ejemplo, puedes decir '2 x hamburguesa' o preguntarme por el menú si necesitas más información."
-    elif "finalizar pedido" in query_lower:
-        return finalize_order()
-    elif "horario" in query_lower:
-        return "🕒 Con gusto te comparto nuestro horario:\nLunes a Viernes: 11:00 AM - 10:00 PM\nSábados y Domingos: 10:00 AM - 11:00 PM\n¿Te gustaría hacer una reserva o un pedido?"
-    elif "especial" in query_lower:
-        return "🌟 ¡Tenemos un especial delicioso hoy! Es una Hamburguesa gourmet con papas fritas. ¿Te gustaría probarlo?"
-    else:
-        return "Disculpa, no estoy seguro de entender tu pregunta. ¿Puedo ayudarte con información sobre nuestro menú, entregas, realizar un pedido o nuestro horario? No dudes en preguntar sobre cualquiera de estos temas."
+    """Procesa la consulta del usuario y devuelve una respuesta usando gropcloud."""
+    try:
+        response = grop_client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Eres un chatbot amigable de un restaurante."},
+                {"role": "user", "content": query}
+            ]
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        st.error(f"Error al obtener respuesta de gropcloud: {e}")
+        return "Lo siento, estoy teniendo problemas para procesar tu solicitud. ¿Puedes intentarlo de nuevo?"
 
 def main():
     st.title("🍽️ Chatbot de Restaurante")
