@@ -1,13 +1,19 @@
 import streamlit as st
 import pandas as pd
 import re
-from groq import Groq
+
 
 # Configuración de la página
 st.set_page_config(page_title="Chatbot de Restaurante", page_icon="🍽️")
-
+if groq_available:
+    from groq import Groq
+    try:
+        client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    except Exception as e:
+        st.error(f"Error initializing Groq client: {e}")
+        groq_available = False
 # Inicialización del cliente Groq
-client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+#client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
 # Cargar datos
 @st.cache_data
