@@ -4,18 +4,9 @@ import json
 from datetime import datetime
 import os
 import re
-from groq import Groq
-try:
-    from groq import Groq
-except ImportError as e:
-    st.error(f"Error al importar Groq: {e}")
-    st.error("Asegúrate de que Groq esté instalado correctamente.")
+
 # Configuración de la página
 st.set_page_config(page_title="Chatbot de Restaurante", page_icon="🍽️", layout="wide")
-
-# Inicialización del cliente Groq
-
-client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
 # Inicialización de variables de estado
 if 'messages' not in st.session_state:
@@ -67,14 +58,15 @@ def load_data():
 def get_menu(category=None):
     """Devuelve el menú del restaurante de manera organizada."""
     if not st.session_state.menu:
-        return "Lo siento, el menú no está disponible en este momento."
+        return "Lo siento, el menú no está disponible en este momento. ¿Puedo ayudarte con algo más?"
     
     if category and category in st.session_state.menu:
-        menu_text = f"🍽️ Menú de {category}:\n\n"
+        menu_text = f"🍽️ Aquí tienes nuestro menú de {category}:\n\n"
         for item in st.session_state.menu[category]:
             menu_text += f"• {item['Item']} - {item['Serving Size']}\n"
+        menu_text += "\n¿Te gustaría ordenar algo de esta categoría?"
     else:
-        menu_text = "🍽️ Nuestro Menú:\n\n"
+        menu_text = "🍽️ Con gusto te muestro nuestro menú:\n\n"
         for category, items in st.session_state.menu.items():
             menu_text += f"**{category}**\n"
             for item in items[:5]:
@@ -82,20 +74,20 @@ def get_menu(category=None):
             if len(items) > 5:
                 menu_text += "...\n"
             menu_text += "\n"
-        menu_text += "Para ver más detalles de una categoría específica, por favor pregúntame sobre ella."
+        menu_text += "¿Te interesa alguna categoría en particular? Puedo darte más detalles si lo deseas."
     return menu_text
 
 def get_delivery_info(city=None):
     """Verifica si se realiza entrega en una ciudad específica o muestra información general."""
     if not city:
         sample_cities = st.session_state.delivery_cities[:5]
-        return f"Realizamos entregas en varias ciudades, incluyendo: {', '.join(sample_cities)}... y más. Por favor, pregunta por una ciudad específica."
+        return f"¡Claro! Realizamos entregas en muchas ciudades. Algunos ejemplos son: {', '.join(sample_cities)}... y muchas más. ¿En qué ciudad te encuentras? Puedo verificar si hacemos entregas allí."
     
     city = city.title()  # Capitaliza la primera letra de cada palabra
     for delivery_city in st.session_state.delivery_cities:
         if city in delivery_city:
-            return f"✅ Sí, realizamos entregas en {delivery_city}."
-    return f"❌ Lo siento, no realizamos entregas en {city}. ¿Quieres que te muestre algunas ciudades donde sí entregamos?"
+            return f"¡Buenas noticias! Sí realizamos entregas en {delivery_city}. ¿Te gustaría hacer un pedido?"
+    return f"Lo siento, parece que no realizamos entregas en {city} por el momento. ¿Quieres que te muestre algunas ciudades cercanas donde sí entregamos?"
 
 def add_to_order(item, quantity):
     """Añade un ítem al pedido actual."""
@@ -107,15 +99,15 @@ def add_to_order(item, quantity):
                     'quantity': quantity,
                     'serving_size': menu_item['Serving Size']
                 })
-                return f"Añadido al pedido: {quantity} x {menu_item['Item']} ({menu_item['Serving Size']})"
-    return f"Lo siento, no pude encontrar '{item}' en nuestro menú."
+                return f"¡Perfecto! He añadido {quantity} x {menu_item['Item']} ({menu_item['Serving Size']}) a tu pedido. ¿Deseas agregar algo más?"
+    return f"Lo siento, no pude encontrar '{item}' en nuestro menú. ¿Quieres que te muestre las opciones disponibles?"
 
 def finalize_order():
     """Finaliza el pedido actual y lo registra."""
     if not st.session_state.current_order:
-        return "No hay ítems en tu pedido actual."
+        return "Parece que aún no has agregado nada a tu pedido. ¿Te gustaría ver el menú para empezar?"
     
-    order_summary = "Resumen del pedido:\n"
+    order_summary = "Aquí tienes el resumen de tu pedido:\n"
     for item in st.session_state.current_order:
         order_summary += f"• {item['quantity']} x {item['item']} ({item['serving_size']})\n"
     
@@ -138,7 +130,7 @@ def finalize_order():
         json.dump(orders, f, indent=4)
     
     st.session_state.current_order = []
-    return f"{order_summary}\nPedido registrado con éxito a las {timestamp}. ¡Gracias por tu compra!"
+    return f"{order_summary}\n¡Genial! Tu pedido ha sido registrado con éxito a las {timestamp}. ¡Gracias por tu compra! ¿Hay algo más en lo que pueda ayudarte?"
 
 def get_bot_response(query):
     """Procesa la consulta del usuario y devuelve una respuesta."""
@@ -163,15 +155,15 @@ def get_bot_response(query):
                 responses.append(add_to_order(item.strip(), int(quantity)))
             return "\n".join(responses)
         else:
-            return "No pude entender tu pedido. Por favor, especifica la cantidad y el nombre del plato, por ejemplo: '2 x hamburguesa'."
+            return "Entiendo que quieres hacer un pedido. ¿Podrías especificar qué te gustaría ordenar? Por ejemplo, puedes decir '2 x hamburguesa' o preguntarme por el menú si necesitas más información."
     elif "finalizar pedido" in query_lower:
         return finalize_order()
     elif "horario" in query_lower:
-        return "🕒 Nuestro horario es:\nLunes a Viernes: 11:00 AM - 10:00 PM\nSábados y Domingos: 10:00 AM - 11:00 PM"
+        return "🕒 Con gusto te comparto nuestro horario:\nLunes a Viernes: 11:00 AM - 10:00 PM\nSábados y Domingos: 10:00 AM - 11:00 PM\n¿Te gustaría hacer una reserva o un pedido?"
     elif "especial" in query_lower:
-        return "🌟 El especial de hoy es: Hamburguesa gourmet con papas fritas"
+        return "🌟 ¡Tenemos un especial delicioso hoy! Es una Hamburguesa gourmet con papas fritas. ¿Te gustaría probarlo?"
     else:
-        return None  # Indica que no se encontró una respuesta predefinida
+        return "Disculpa, no estoy seguro de entender tu pregunta. ¿Puedo ayudarte con información sobre nuestro menú, entregas, realizar un pedido o nuestro horario? No dudes en preguntar sobre cualquiera de estos temas."
 
 def main():
     st.title("🍽️ Chatbot de Restaurante")
@@ -179,7 +171,7 @@ def main():
     if not st.session_state.initialized:
         load_data()
     
-    st.write("Bienvenido a nuestro restaurante virtual. ¿En qué puedo ayudarte hoy?")
+    st.write("¡Bienvenido a nuestro restaurante virtual! Estoy aquí para ayudarte con cualquier pregunta sobre nuestro menú, entregas, o para tomar tu pedido. ¿En qué puedo asistirte hoy?")
     
     # Mostrar mensajes anteriores
     for message in st.session_state.messages:
@@ -195,21 +187,6 @@ def main():
         with st.chat_message("assistant"):
             message_placeholder = st.empty()
             full_response = get_bot_response(prompt)
-            
-            if full_response is None:
-                # Si no hay respuesta predefinida, usar Groq para generar una respuesta
-                full_response = ""
-                for response in client.chat.completions.create(
-                    messages=[
-                        {"role": m["role"], "content": m["content"]}
-                        for m in st.session_state.messages
-                    ],
-                    model="mixtral-8x7b-32768",
-                    stream=True,
-                ):
-                    full_response += (response.choices[0].delta.content or "")
-                    message_placeholder.markdown(full_response + "▌")
-            
             message_placeholder.markdown(full_response)
         
         st.session_state.messages.append({"role": "assistant", "content": full_response})
