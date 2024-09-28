@@ -1,212 +1,124 @@
 import streamlit as st
-import csv
-import json
-from datetime import datetime
-import os
+import pandas as pd
 import re
+from groq import Groq
 
 # Configuración de la página
-st.set_page_config(page_title="Chatbot de Restaurante", page_icon="🍽️", layout="wide")
+st.set_page_config(page_title="Chatbot de Restaurante", page_icon="🍽️")
 
-# Intento de importar groq
-try:
-    from groq import Groq
-    GROQ_AVAILABLE = True
-except ImportError:
-    GROQ_AVAILABLE = False
-    st.error("No se pudo importar la biblioteca 'groq'. Por favor, asegúrese de que está instalada correctamente.")
-    st.info("Puede instalar groq ejecutando: pip install groq==0.11.0")
+# Inicialización del cliente Groq
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-# Configuración de groq usando Streamlit secrets
-GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-
-if not GROQ_API_KEY:
-    st.error("Error: No se ha configurado la clave de API de Groq. Por favor, configure la variable GROQ_API_KEY en los secrets de Streamlit.")
-    st.stop()
-
-# Inicializar el cliente de Groq si está disponible
-if GROQ_AVAILABLE:
-    client = Groq(api_key=GROQ_API_KEY)
-else:
-    client = None
-
-# Inicialización de variables de estado
-if 'messages' not in st.session_state:
-    st.session_state.messages = []
-if 'menu' not in st.session_state:
-    st.session_state.menu = {}
-if 'delivery_cities' not in st.session_state:
-    st.session_state.delivery_cities = []
-if 'current_order' not in st.session_state:
-    st.session_state.current_order = []
-if 'initialized' not in st.session_state:
-    st.session_state.initialized = False
-
+# Cargar datos
+@st.cache_data
 def load_data():
-    """Carga los datos del menú y las ciudades de entrega."""
-    try:
-        # Cargar el menú
-        with open('menu.csv', 'r', encoding='utf-8') as file:
-            reader = csv.reader(file)
-            headers = next(reader)  # Leer los encabezados
-            for row in reader:
-                category = row[0]
-                item = row[1]
-                serving_size = row[2]
-                if category not in st.session_state.menu:
-                    st.session_state.menu[category] = []
-                st.session_state.menu[category].append({
-                    'Item': item,
-                    'Serving Size': serving_size
-                })
+    menu_df = pd.read_csv('menu.csv')
+    cities_df = pd.read_csv('us-cities.csv')
+    return menu_df, cities_df['City'].tolist()
 
-        # Cargar las ciudades de entrega
-        with open('us-cities.csv', 'r', encoding='utf-8') as file:
-            reader = csv.reader(file)
-            next(reader)  # Saltar la primera línea
-            for row in reader:
-                if len(row) >= 2:
-                    st.session_state.delivery_cities.append(f"{row[0]}, {row[1]}")
+menu_df, delivery_cities = load_data()
 
-        st.session_state.initialized = True
-        return True
-    except FileNotFoundError:
-        st.error("Error: Archivos de datos no encontrados.")
-        return False
-    except Exception as e:
-        st.error(f"Error al cargar los datos: {e}")
-        return False
+# Simplificar el menú
+simplified_menu = menu_df[['Category', 'Item', 'Serving Size']]
 
-def get_menu(category=None):
-    """Devuelve el menú del restaurante de manera organizada."""
-    if not st.session_state.menu:
-        return "Lo siento, el menú no está disponible en este momento. ¿Puedo ayudarte con algo más?"
-    
-    if category and category in st.session_state.menu:
-        menu_text = f"🍽️ Aquí tienes nuestro menú de {category}:\n\n"
-        for item in st.session_state.menu[category]:
+# Funciones de manejo del menú
+def get_menu():
+    menu_text = "🍽️ Nuestro Menú:\n\n"
+    for category, items in simplified_menu.groupby('Category'):
+        menu_text += f"**{category}**\n"
+        for _, item in items.head().iterrows():
             menu_text += f"• {item['Item']} - {item['Serving Size']}\n"
-        menu_text += "\n¿Te gustaría ordenar algo de esta categoría?"
-    else:
-        menu_text = "🍽️ Con gusto te muestro nuestro menú:\n\n"
-        for category, items in st.session_state.menu.items():
-            menu_text += f"**{category}**\n"
-            for item in items[:5]:
-                menu_text += f"• {item['Item']} - {item['Serving Size']}\n"
-            if len(items) > 5:
-                menu_text += "...\n"
-            menu_text += "\n"
-        menu_text += "¿Te interesa alguna categoría en particular? Puedo darte más detalles si lo deseas."
+        menu_text += "...\n\n"
+    menu_text += "Para ver más detalles de una categoría específica, por favor pregúntame sobre ella."
     return menu_text
 
-def get_delivery_info(city=None):
-    """Verifica si se realiza entrega en una ciudad específica o muestra información general."""
-    if not city:
-        sample_cities = st.session_state.delivery_cities[:5]
-        return f"¡Claro! Realizamos entregas en muchas ciudades. Algunos ejemplos son: {', '.join(sample_cities)}... y muchas más. ¿En qué ciudad te encuentras? Puedo verificar si hacemos entregas allí."
+def get_category_details(category):
+    category_items = simplified_menu[simplified_menu['Category'] == category]
+    if category_items.empty:
+        return f"Lo siento, no encontré información sobre la categoría '{category}'."
     
-    city = city.title()  # Capitaliza la primera letra de cada palabra
-    for delivery_city in st.session_state.delivery_cities:
-        if city in delivery_city:
-            return f"¡Buenas noticias! Sí realizamos entregas en {delivery_city}. ¿Te gustaría hacer un pedido?"
-    return f"Lo siento, parece que no realizamos entregas en {city} por el momento. ¿Quieres que te muestre algunas ciudades cercanas donde sí entregamos?"
+    details = f"Detalles de {category}:\n\n"
+    for _, item in category_items.iterrows():
+        details += f"• {item['Item']} - {item['Serving Size']}\n"
+    return details
 
-def add_to_order(item, quantity):
-    """Añade un ítem al pedido actual."""
-    for category in st.session_state.menu.values():
-        for menu_item in category:
-            if menu_item['Item'].lower() == item.lower():
-                st.session_state.current_order.append({
-                    'item': menu_item['Item'],
-                    'quantity': quantity,
-                    'serving_size': menu_item['Serving Size']
-                })
-                return f"¡Perfecto! He añadido {quantity} x {menu_item['Item']} ({menu_item['Serving Size']}) a tu pedido. ¿Deseas agregar algo más?"
-    return f"Lo siento, no pude encontrar '{item}' en nuestro menú. ¿Quieres que te muestre las opciones disponibles?"
+# Funciones de manejo de entregas
+def check_delivery(city):
+    if city.lower() in [c.lower() for c in delivery_cities]:
+        return f"✅ Sí, realizamos entregas en {city}."
+    else:
+        return f"❌ Lo siento, actualmente no realizamos entregas en {city}."
 
-def finalize_order():
-    """Finaliza el pedido actual y lo registra."""
-    if not st.session_state.current_order:
-        return "Parece que aún no has agregado nada a tu pedido. ¿Te gustaría ver el menú para empezar?"
-    
-    order_summary = "Aquí tienes el resumen de tu pedido:\n"
-    for item in st.session_state.current_order:
-        order_summary += f"• {item['quantity']} x {item['item']} ({item['serving_size']})\n"
-    
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    order_details = {
-        'timestamp': timestamp,
-        'items': st.session_state.current_order
-    }
-    
-    # Registrar el pedido en un archivo JSON
-    if not os.path.exists('orders.json'):
-        with open('orders.json', 'w') as f:
-            json.dump([], f)
-    
-    with open('orders.json', 'r+') as f:
-        orders = json.load(f)
-        orders.append(order_details)
-        f.seek(0)
-        json.dump(orders, f, indent=4)
-    
-    st.session_state.current_order = []
-    return f"{order_summary}\n¡Genial! Tu pedido ha sido registrado con éxito a las {timestamp}. ¡Gracias por tu compra! ¿Hay algo más en lo que pueda ayudarte?"
+def get_delivery_cities():
+    return "Realizamos entregas en las siguientes ciudades:\n" + "\n".join(delivery_cities[:10]) + "\n..."
 
-def get_bot_response(query):
-    """Procesa la consulta del usuario y devuelve una respuesta usando groq si está disponible."""
-    if not GROQ_AVAILABLE:
-        return "Lo siento, el servicio de chat no está disponible en este momento. Por favor, contacta al soporte técnico."
+# Función de manejo de pedidos
+def start_order():
+    return ("Para realizar un pedido, por favor sigue estos pasos:\n"
+            "1. Revisa nuestro menú\n"
+            "2. Dime qué items te gustaría ordenar\n"
+            "3. Proporciona tu dirección de entrega\n"
+            "4. Confirma tu pedido\n\n"
+            "¿Qué te gustaría ordenar?")
 
-    try:
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Eres un chatbot amigable de un restaurante."
-                },
-                {
-                    "role": "user",
-                    "content": query
-                }
-            ],
-            model="mixtral-8x7b-32768",
-            max_tokens=1024,
-            temperature=0.5,
-            top_p=1,
-            stream=False,
-        )
-        return chat_completion.choices[0].message.content
-    except Exception as e:
-        st.error(f"Error al obtener respuesta de Groq: {e}")
-        return "Lo siento, estoy teniendo problemas para procesar tu solicitud. ¿Puedes intentarlo de nuevo?"
+# Función de manejo de consultas
+def handle_query(query):
+    query_lower = query.lower()
+    
+    if re.search(r'\b(menú|carta)\b', query_lower):
+        return get_menu()
+    elif re.search(r'\b(entrega|reparto)\b', query_lower):
+        city_match = re.search(r'en\s+(\w+)', query_lower)
+        if city_match:
+            return check_delivery(city_match.group(1))
+        else:
+            return get_delivery_cities()
+    elif re.search(r'\b(pedir|ordenar|pedido)\b', query_lower):
+        return start_order()
+    elif re.search(r'\b(categoría|categoria)\b', query_lower):
+        category_match = re.search(r'(categoría|categoria)\s+(\w+)', query_lower)
+        if category_match:
+            return get_category_details(category_match.group(2))
+    
+    # Si no se reconoce la consulta, usamos Groq para generar una respuesta
+    messages = st.session_state.messages + [{"role": "user", "content": query}]
+    response = client.chat.completions.create(
+        messages=[
+            {"role": m["role"], "content": m["content"]}
+            for m in messages
+        ],
+        model="mixtral-8x7b-32768",
+        max_tokens=150,
+        temperature=0.7,
+    )
+    return response.choices[0].message.content
 
-def main():
-    st.title("🍽️ Chatbot de Restaurante")
-    
-    if not st.session_state.initialized:
-        load_data()
-    
-    st.write("¡Bienvenido a nuestro restaurante virtual! Estoy aquí para ayudarte con cualquier pregunta sobre nuestro menú, entregas, o para tomar tu pedido. ¿En qué puedo asistirte hoy?")
-    
-    # Mostrar mensajes anteriores
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-    
-    # Área de entrada del usuario
-    if prompt := st.chat_input("Escribe tu mensaje aquí:"):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        
-        with st.chat_message("assistant"):
-            message_placeholder = st.empty()
-            full_response = get_bot_response(prompt)
-            message_placeholder.markdown(full_response)
-        
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
+# Título de la aplicación
+st.title("🍽️ Chatbot de Restaurante")
 
-if __name__ == "__main__":
-    main()
+# Inicialización del historial de chat en la sesión de Streamlit
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# Mostrar mensajes existentes
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# Campo de entrada para el usuario
+if prompt := st.chat_input("¿En qué puedo ayudarte hoy?"):
+    # Agregar mensaje del usuario al historial
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    
+    # Mostrar el mensaje del usuario
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    
+    # Generar respuesta del chatbot
+    with st.chat_message("assistant"):
+        message_placeholder = st.empty()
+        full_response = handle_query(prompt)
+        message_placeholder.markdown(full_response)
+    
+    # Agregar respuesta del chatbot al historial
+    st.session_state.messages.append({"role": "assistant", "content": full_response})
